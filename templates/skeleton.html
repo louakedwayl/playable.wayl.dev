@@ -458,7 +458,7 @@ function drawGame() {
   if (gameState === STATE.MENU || gameState === STATE.END) return;
   const cx = W / 2, cy = H / 2;
   const sz = 60 * scale;
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 5]);
   ctx.strokeRect(cx - sz, cy - sz, sz * 2, sz * 2);
@@ -466,7 +466,7 @@ function drawGame() {
   ctx.beginPath(); ctx.moveTo(cx - sz, cy); ctx.lineTo(cx + sz, cy); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx, cy - sz); ctx.lineTo(cx, cy + sz); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
   ctx.font = `${11 * scale}px system-ui`;
   ctx.textAlign = 'center';
   ctx.fillText('IMPLEMENT MECHANIC HERE', cx, cy + sz + 20 * scale);
