@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Runner Mechanic Template</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #111;
+    font-family: system-ui, -apple-system, sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    letter-spacing: -0.02em;
+  }
+  canvas { display: block; }
+
+  .screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10;
+  }
+
+  /* START SCREEN */
+  #start-screen {
+    background: #111;
+    opacity: 1;
+    transition: opacity 0.4s ease-out;
+  }
+  #start-screen.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #start-screen h1 {
+    font-size: 52px; font-weight: 900; color: #fff;
+    margin-bottom: 8px; letter-spacing: -0.04em;
+    text-transform: uppercase;
+  }
+  #start-screen p {
+    font-size: 13px; color: #555; margin-bottom: 40px;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+  }
+
+  @keyframes border-pulse {
+    0%, 100% { border-color: rgba(255,255,255,0.4); }
+    50% { border-color: rgba(255,255,255,1); }
+  }
+  .btn-primary {
+    padding: 16px 52px; font-size: 16px; font-weight: 800;
+    border: 2px solid rgba(255,255,255,0.6); border-radius: 50px; cursor: pointer;
+    background: transparent; color: #fff;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    animation: border-pulse 2.5s ease-in-out infinite;
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn-primary:active {
+    background: #fff; color: #111;
+  }
+
+  /* END SCREEN */
+  #end-screen {
+    background: rgba(0,0,0,0.92); display: none;
+  }
+  #end-screen.show .end-content {
+    opacity: 1; transform: translateY(0);
+  }
+  .end-content {
+    display: flex; flex-direction: column; align-items: center;
+    opacity: 0; transform: translateY(24px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+  }
+  #end-screen .score-label {
+    font-size: 11px; color: #555; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.15em;
+    margin-bottom: 6px;
+  }
+  #final-score {
+    font-size: 64px; font-weight: 900; color: #fff;
+    margin-bottom: 4px; letter-spacing: -0.03em;
+  }
+  #end-screen .subtitle {
+    color: #444; font-size: 12px; margin-bottom: 32px;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
+  }
+
+  .btn-cta {
+    padding: 15px 48px; font-size: 15px; font-weight: 800;
+    border: none; border-radius: 50px; cursor: pointer;
+    background: #fff; color: #111;
+    margin-bottom: 14px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    transition: opacity 0.2s;
+  }
+  .btn-cta:active { opacity: 0.8; }
+  .btn-secondary {
+    padding: 11px 36px; font-size: 12px; font-weight: 700;
+    border: 1.5px solid #333; border-radius: 50px;
+    cursor: pointer; background: transparent; color: #555;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .btn-secondary:active { border-color: #666; color: #888; }
+
+  /* HUD */
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; padding: 14px 18px;
+    display: none; justify-content: space-between; align-items: center;
+    z-index: 5;
+  }
+  #hud .score {
+    font-size: 20px; font-weight: 800; color: #fff;
+    letter-spacing: -0.02em; min-width: 32px;
+  }
+  #hud .progress-bar {
+    flex: 1; height: 2px; margin: 0 14px;
+    background: rgba(255,255,255,0.08); border-radius: 1px; overflow: hidden;
+  }
+  #hud .progress-fill {
+    height: 100%; width: 0%; border-radius: 1px;
+    background: rgba(255,255,255,0.35); transition: width 0.3s ease-out;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="screen" id="start-screen">
+  <h1 id="game-title">Runner</h1>
+  <p id="game-subtitle">Swipe to move</p>
+  <button class="btn-primary" id="play-btn">PLAY</button>
+</div>
+
+<div class="screen" id="end-screen">
+  <div class="end-content">
+    <div class="score-label">Your Score</div>
+    <div id="final-score">0</div>
+    <div class="subtitle">Can you beat this?</div>
+    <button class="btn-cta" id="cta-btn">DOWNLOAD NOW</button>
+    <button class="btn-secondary" id="retry-btn">PLAY AGAIN</button>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="score" id="score-display">0</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+// =====================================================================
+// ENGINE — DO NOT MODIFY
+// =====================================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+const STATE = { MENU: 0, PLAYING: 1, END: 2 };
+let gameState = STATE.MENU;
+let score = 0;
+let elapsed = 0;
+let lastTime = 0;
+let scrollY = 0;
+
+// Input
+let input = { x: null, y: null, active: false, tapped: false };
+canvas.addEventListener('touchstart', e => { e.preventDefault(); input.active = true; input.x = e.touches[0].clientX; input.y = e.touches[0].clientY; input.tapped = true; }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); input.x = e.touches[0].clientX; input.y = e.touches[0].clientY; }, { passive: false });
+canvas.addEventListener('touchend', e => { e.preventDefault(); input.active = false; });
+canvas.addEventListener('mousedown', e => { input.active = true; input.x = e.clientX; input.y = e.clientY; input.tapped = true; });
+canvas.addEventListener('mousemove', e => { if (input.active) { input.x = e.clientX; input.y = e.clientY; } });
+canvas.addEventListener('mouseup', () => { input.active = false; });
+canvas.addEventListener('mouseleave', () => { input.active = false; });
+
+// Screens
+document.getElementById('play-btn').addEventListener('click', () => {
+  const startScreen = document.getElementById('start-screen');
+  startScreen.classList.add('fade-out');
+  setTimeout(() => { startScreen.classList.add('hidden'); }, 400);
+  document.getElementById('hud').style.display = 'flex';
+  gameState = STATE.PLAYING; score = 0; elapsed = 0; scrollY = 0;
+  lastTime = performance.now(); initGame();
+});
+document.getElementById('retry-btn').addEventListener('click', () => {
+  document.getElementById('end-screen').style.display = 'none';
+  document.getElementById('end-screen').classList.remove('show');
+  document.getElementById('hud').style.display = 'flex';
+  gameState = STATE.PLAYING; score = 0; elapsed = 0; scrollY = 0;
+  lastTime = performance.now(); initGame();
+});
+document.getElementById('cta-btn').addEventListener('click', () => { alert('→ App Store redirect'); });
+
+function endGame() {
+  gameState = STATE.END;
+  document.getElementById('hud').style.display = 'none';
+  const endScreen = document.getElementById('end-screen');
+  endScreen.style.display = 'flex';
+  document.getElementById('final-score').textContent = score;
+  requestAnimationFrame(() => { endScreen.classList.add('show'); });
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent = score;
+  const progress = Math.min(100, (scrollY / RUNNER_CONFIG.trackLength) * 100);
+  document.getElementById('progress-fill').style.width = progress + '%';
+}
+
+// Particles
+let particles = [];
+function spawnParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 * i) / count;
+    particles.push({ x, y, vx: Math.cos(a) * (2 + Math.random() * 3), vy: Math.sin(a) * (2 + Math.random() * 3), life: 1, size: 3 });
+  }
+}
+function updateParticles() { particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.03; }); particles = particles.filter(p => p.life > 0); }
+function drawParticles() {
+  particles.forEach(p => {
+    const r = p.size * p.life * 2.5;
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+    grad.addColorStop(0, 'rgba(200,190,170,' + (p.life * 0.7) + ')');
+    grad.addColorStop(1, 'rgba(200,190,170,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+// Floating text
+let floats = [];
+function spawnFloat(x, y, text) { floats.push({ x, y, text, life: 1, vy: -2, startLife: 1 }); }
+function updateFloats() { floats.forEach(f => { f.y += f.vy; f.life -= 0.025; }); floats = floats.filter(f => f.life > 0); }
+function drawFloats() {
+  floats.forEach(f => {
+    const age = 1 - f.life;
+    const scaleT = Math.min(age / 0.15, 1);
+    const scale = 1.3 - 0.3 * scaleT;
+    ctx.save();
+    ctx.globalAlpha = f.life;
+    ctx.translate(f.x, f.y);
+    ctx.scale(scale, scale);
+    const isPositive = f.text.charAt(0) === '+';
+    ctx.fillStyle = isPositive ? '#e8dcc8' : '#e8e8e8';
+    ctx.font = '800 26px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.text, 0, 0);
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// Main loop
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05); lastTime = time;
+  ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+  if (gameState === STATE.PLAYING) {
+    elapsed += dt; updateGame(dt); updateParticles(); updateFloats(); updateHUD();
+    if (scrollY >= RUNNER_CONFIG.trackLength) endGame();
+  }
+  drawGame(); drawParticles(); drawFloats();
+  input.tapped = false;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// =====================================================================
+// RUNNER MECHANIC — CONFIGURATION
+// =====================================================================
+
+const RUNNER_CONFIG = {
+  trackLength: 5000,
+  scrollSpeed: 3,
+  entityCount: 10,
+  entitySpread: 60,
+  entitySize: 7,
+  gateCount: 8,
+  gateSpacing: 600,
+  gateWidth: 0.3,
+  goodGateMin: 3,
+  goodGateMax: 10,
+  badGateMin: 2,
+  badGateMax: 5,
+  obstacleChance: 0.5,
+  obstacleMaxCount: 3,
+  obstacleMinRadius: 15,
+  obstacleMaxRadius: 30,
+  obstacleDamage: 3,
+};
+
+// =====================================================================
+// RUNNER STATE
+// =====================================================================
+let entityX = 0;
+let targetX = 0;
+let entities = [];
+let gates = [];
+let obstacles = [];
+
+// =====================================================================
+// RESKIN FUNCTIONS — CHANGE VISUALS HERE
+// =====================================================================
+
+/* RESKIN: Entity with soft circular glow */
+function drawEntity(x, y, size) {
+  const glowR = size * 2.2;
+  const grad = ctx.createRadialGradient(x, y, size * 0.2, x, y, glowR);
+  grad.addColorStop(0, 'rgba(232,232,232,0.6)');
+  grad.addColorStop(0.4, 'rgba(232,232,232,0.2)');
+  grad.addColorStop(1, 'rgba(232,232,232,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#e8e8e8';
+  ctx.beginPath();
+  ctx.arc(x, y, size * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* RESKIN: Clean geometric gates */
+function drawGate(x, y, w, h, type, value) {
+  const isGood = type === 'good';
+  const left = x - w / 2;
+  const top = y - h / 2;
+  const r = 4;
+
+  // Background fill
+  ctx.fillStyle = isGood ? 'rgba(220,200,160,0.07)' : 'rgba(255,255,255,0.03)';
+  ctx.beginPath();
+  ctx.moveTo(left + r, top);
+  ctx.lineTo(left + w - r, top);
+  ctx.quadraticCurveTo(left + w, top, left + w, top + r);
+  ctx.lineTo(left + w, top + h - r);
+  ctx.quadraticCurveTo(left + w, top + h, left + w - r, top + h);
+  ctx.lineTo(left + r, top + h);
+  ctx.quadraticCurveTo(left, top + h, left, top + h - r);
+  ctx.lineTo(left, top + r);
+  ctx.quadraticCurveTo(left, top, left + r, top);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = isGood ? 'rgba(220,200,160,0.25)' : 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Center divider line
+  ctx.strokeStyle = isGood ? 'rgba(220,200,160,0.12)' : 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(left + 10, y);
+  ctx.lineTo(left + w - 10, y);
+  ctx.stroke();
+
+  // Text
+  ctx.fillStyle = isGood ? 'rgba(232,220,190,0.8)' : 'rgba(200,200,200,0.45)';
+  ctx.font = '800 18px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((isGood ? '+' : '-') + value, x, y);
+}
+
+/* RESKIN: Obstacle with soft glow shadow */
+function drawObstacle(x, y, radius) {
+  // Outer glow
+  const glowR = radius * 1.6;
+  const grad = ctx.createRadialGradient(x, y, radius * 0.5, x, y, glowR);
+  grad.addColorStop(0, 'rgba(42,42,42,0.5)');
+  grad.addColorStop(1, 'rgba(42,42,42,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core
+  ctx.fillStyle = '#2a2a2a';
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Subtle rim
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+/* RESKIN: Subtle track with faint dotted side lines */
+function drawTrack() {
+  const trackW = W * 0.75;
+  const trackX = (W - trackW) / 2;
+
+  // Very subtle track surface
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  ctx.fillRect(trackX, 0, trackW, H);
+
+  // Dotted side lines
+  ctx.setLineDash([3, 12]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(trackX, 0); ctx.lineTo(trackX, H);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(trackX + trackW, 0); ctx.lineTo(trackX + trackW, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+/* RESKIN: Elegant dashed finish line */
+function drawFinishLine(screenY) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([10, 6]);
+  ctx.beginPath();
+  ctx.moveTo(0, screenY);
+  ctx.lineTo(W, screenY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '700 11px system-ui';
+  ctx.textAlign = 'center';
+  ctx.letterSpacing = '0.12em';
+  ctx.fillText('FINISH', W / 2, screenY - 10);
+}
+
+// =====================================================================
+// CORE LOGIC
+// =====================================================================
+
+function createEntity() {
+  const cfg = RUNNER_CONFIG;
+  return {
+    ox: (Math.random() - 0.5) * cfg.entitySpread,
+    oy: (Math.random() - 0.5) * cfg.entitySpread,
+    size: cfg.entitySize + Math.random() * 2,
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.8 + Math.random() * 0.4,
+  };
+}
+
+function generateLevel() {
+  const cfg = RUNNER_CONFIG;
+  gates = [];
+  obstacles = [];
+  for (let i = 1; i <= cfg.gateCount; i++) {
+    const y = i * cfg.gateSpacing;
+    const side = Math.random() > 0.5 ? -1 : 1;
+    const gw = W * cfg.gateWidth;
+    gates.push({ y, x: side * (W * 0.18), w: gw, h: 45, type: 'good', value: cfg.goodGateMin + Math.floor(Math.random() * (cfg.goodGateMax - cfg.goodGateMin)), passed: false });
+    gates.push({ y, x: -side * (W * 0.18), w: gw, h: 45, type: 'bad', value: cfg.badGateMin + Math.floor(Math.random() * (cfg.badGateMax - cfg.badGateMin)), passed: false });
+    if (i < cfg.gateCount && Math.random() < cfg.obstacleChance) {
+      const count = 1 + Math.floor(Math.random() * cfg.obstacleMaxCount);
+      for (let j = 0; j < count; j++) {
+        obstacles.push({
+          y: y + cfg.gateSpacing * 0.5 + (Math.random() - 0.5) * 200,
+          x: (Math.random() - 0.5) * W * 0.5,
+          radius: cfg.obstacleMinRadius + Math.random() * (cfg.obstacleMaxRadius - cfg.obstacleMinRadius),
+          passed: false,
+        });
+      }
+    }
+  }
+}
+
+function addEntities(count) { for (let i = 0; i < count; i++) entities.push(createEntity()); }
+
+function removeEntities(count) {
+  const removed = Math.min(count, entities.length - 1);
+  for (let i = 0; i < removed; i++) {
+    const e = entities.pop();
+    spawnParticles(W / 2 + entityX + e.ox, H * 0.65 + e.oy, 4);
+  }
+}
+
+// =====================================================================
+// TEMPLATE FUNCTIONS — FILLED FOR RUNNER
+// =====================================================================
+
+function initGame() {
+  entityX = 0; targetX = 0;
+  entities = []; particles = []; floats = [];
+  for (let i = 0; i < RUNNER_CONFIG.entityCount; i++) entities.push(createEntity());
+  generateLevel();
+}
+
+function updateGame(dt) {
+  const cfg = RUNNER_CONFIG;
+  scrollY += cfg.scrollSpeed;
+
+  if (input.active && input.x !== null) targetX = input.x - W / 2;
+  entityX += (targetX - entityX) * 0.1;
+  entityX = Math.max(-W * 0.3, Math.min(W * 0.3, entityX));
+
+  score = entities.length;
+  const crowdY = H * 0.65;
+  const crowdCX = W / 2 + entityX;
+
+  gates.forEach(gate => {
+    if (gate.passed) return;
+    const sy = crowdY - (gate.y - scrollY);
+    if (Math.abs(sy - crowdY) < 25) {
+      const gl = W / 2 + gate.x - gate.w / 2;
+      const gr = W / 2 + gate.x + gate.w / 2;
+      if (crowdCX > gl && crowdCX < gr) {
+        gate.passed = true;
+        if (gate.type === 'good') {
+          addEntities(gate.value);
+          spawnFloat(crowdCX, crowdY - 50, '+' + gate.value);
+          spawnParticles(crowdCX, crowdY, 10);
+        } else {
+          removeEntities(gate.value);
+          spawnFloat(crowdCX, crowdY - 50, '-' + gate.value);
+        }
+      }
+    }
+  });
+
+  obstacles.forEach(obs => {
+    if (obs.passed) return;
+    const sy = crowdY - (obs.y - scrollY);
+    const ox = W / 2 + obs.x;
+    const dist = Math.sqrt((crowdCX - ox) ** 2 + (crowdY - sy) ** 2);
+    if (dist < obs.radius + 20) {
+      obs.passed = true;
+      removeEntities(cfg.obstacleDamage);
+      spawnFloat(crowdCX, crowdY - 50, '-' + cfg.obstacleDamage);
+    }
+  });
+
+  if (entities.length <= 0) { entities.push(createEntity()); endGame(); }
+}
+
+function drawGame() {
+  const crowdY = H * 0.65;
+  drawTrack();
+
+  const finishSY = crowdY - (RUNNER_CONFIG.trackLength - scrollY);
+  if (finishSY > -30 && finishSY < H + 30) drawFinishLine(finishSY);
+
+  gates.forEach(gate => {
+    const sy = crowdY - (gate.y - scrollY);
+    if (sy < -60 || sy > H + 60) return;
+    drawGate(W / 2 + gate.x, sy, gate.w, gate.h, gate.type, gate.value);
+  });
+
+  obstacles.forEach(obs => {
+    const sy = crowdY - (obs.y - scrollY);
+    if (sy < -50 || sy > H + 50) return;
+    drawObstacle(W / 2 + obs.x, sy, obs.radius);
+  });
+
+  const cx = W / 2 + entityX;
+  const time = performance.now();
+  entities.forEach(m => {
+    const wx = Math.sin(time * 0.003 * m.speed + m.phase) * 2;
+    const wy = Math.cos(time * 0.004 * m.speed + m.phase) * 1.5;
+    drawEntity(cx + m.ox + wx, crowdY + m.oy + wy, m.size);
+  });
+
+  // Entity count bubble (polished)
+  if (entities.length > 0) {
+    const bx = cx;
+    const by = crowdY - 42;
+    const br = 15;
+    const bubbleGrad = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+    bubbleGrad.addColorStop(0, 'rgba(255,255,255,0.14)');
+    bubbleGrad.addColorStop(1, 'rgba(255,255,255,0.04)');
+    ctx.fillStyle = bubbleGrad;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '700 11px system-ui';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(entities.length, bx, by);
+  }
+}
+</script>
+</body>
+</html>

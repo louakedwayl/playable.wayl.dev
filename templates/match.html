@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Match Mechanic Template</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #111;
+    font-family: system-ui, sans-serif;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas { display: block; }
+
+  .screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 10;
+  }
+
+  #start-screen { background: #111; }
+  #start-screen h1 { font-size: 32px; font-weight: 900; color: #fff; margin-bottom: 8px; }
+  #start-screen p { font-size: 14px; color: #666; margin-bottom: 30px; }
+
+  #end-screen { background: rgba(0,0,0,0.9); display: none; }
+  #end-screen h2 { font-size: 22px; color: #fff; font-weight: 900; margin-bottom: 5px; }
+  #final-score { font-size: 60px; font-weight: 900; color: #fff; margin-bottom: 5px; }
+  #end-screen .subtitle { color: #555; font-size: 13px; margin-bottom: 25px; }
+
+  .btn-primary {
+    padding: 14px 45px; font-size: 18px; font-weight: 800;
+    border: 2px solid #fff; border-radius: 50px; cursor: pointer;
+    background: transparent; color: #fff;
+  }
+  .btn-cta {
+    padding: 14px 45px; font-size: 16px; font-weight: 800;
+    border: 2px solid #fff; border-radius: 50px; cursor: pointer;
+    background: #fff; color: #111;
+    margin-bottom: 12px;
+  }
+  .btn-secondary {
+    padding: 10px 35px; font-size: 13px; font-weight: 700;
+    border: 1px solid #444; border-radius: 50px;
+    cursor: pointer; background: transparent; color: #555;
+  }
+
+  #hud {
+    position: fixed; top: 0; left: 0; width: 100%; padding: 12px 16px;
+    display: none; justify-content: space-between; align-items: center;
+    z-index: 5;
+  }
+  #hud .score { font-size: 22px; font-weight: 900; color: #fff; }
+  #hud .progress-bar {
+    flex: 1; height: 3px; margin: 0 12px;
+    background: #222; border-radius: 2px; overflow: hidden;
+  }
+  #hud .progress-fill {
+    height: 100%; width: 0%; border-radius: 2px;
+    background: #666; transition: width 0.3s;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="screen" id="start-screen">
+  <h1 id="game-title">Match</h1>
+  <p id="game-subtitle">Swap to match 3</p>
+  <button class="btn-primary" id="play-btn">PLAY</button>
+</div>
+
+<div class="screen" id="end-screen">
+  <h2>Your Score</h2>
+  <div id="final-score">0</div>
+  <div class="subtitle">Can you beat this?</div>
+  <button class="btn-cta" id="cta-btn">DOWNLOAD NOW</button>
+  <button class="btn-secondary" id="retry-btn">PLAY AGAIN</button>
+</div>
+
+<div id="hud">
+  <div class="score" id="score-display">0</div>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+// =====================================================================
+// ENGINE — DO NOT MODIFY
+// =====================================================================
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+const STATE = { MENU: 0, PLAYING: 1, END: 2 };
+let gameState = STATE.MENU;
+let score = 0;
+let elapsed = 0;
+let lastTime = 0;
+
+// Input
+let input = { x: null, y: null, active: false, tapped: false, startX: null, startY: null };
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); input.active = true;
+  input.x = e.touches[0].clientX; input.y = e.touches[0].clientY;
+  input.startX = input.x; input.startY = input.y;
+  input.tapped = true;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); input.x = e.touches[0].clientX; input.y = e.touches[0].clientY; }, { passive: false });
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  handleSwipe();
+  input.active = false; input.startX = null; input.startY = null;
+});
+canvas.addEventListener('mousedown', e => {
+  input.active = true; input.x = e.clientX; input.y = e.clientY;
+  input.startX = e.clientX; input.startY = e.clientY;
+  input.tapped = true;
+});
+canvas.addEventListener('mousemove', e => { if (input.active) { input.x = e.clientX; input.y = e.clientY; } });
+canvas.addEventListener('mouseup', () => { handleSwipe(); input.active = false; input.startX = null; input.startY = null; });
+canvas.addEventListener('mouseleave', () => { input.active = false; input.startX = null; input.startY = null; });
+
+// Screens
+document.getElementById('play-btn').addEventListener('click', () => {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('hud').style.display = 'flex';
+  gameState = STATE.PLAYING; score = 0; elapsed = 0;
+  lastTime = performance.now(); initGame();
+});
+document.getElementById('retry-btn').addEventListener('click', () => {
+  document.getElementById('end-screen').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  gameState = STATE.PLAYING; score = 0; elapsed = 0;
+  lastTime = performance.now(); initGame();
+});
+document.getElementById('cta-btn').addEventListener('click', () => { alert('→ App Store redirect'); });
+
+function endGame() {
+  gameState = STATE.END;
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('end-screen').style.display = 'flex';
+  document.getElementById('final-score').textContent = score;
+}
+
+function updateHUD() {
+  document.getElementById('score-display').textContent = score;
+  const progress = Math.min(100, (score / MATCH_CONFIG.targetScore) * 100);
+  document.getElementById('progress-fill').style.width = progress + '%';
+}
+
+// Particles
+let particles = [];
+function spawnParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 * i) / count;
+    particles.push({ x, y, vx: Math.cos(a) * (2 + Math.random() * 3), vy: Math.sin(a) * (2 + Math.random() * 3), life: 1, size: 3 });
+  }
+}
+function updateParticles() { particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.15; p.life -= 0.03; }); particles = particles.filter(p => p.life > 0); }
+function drawParticles() { particles.forEach(p => { ctx.globalAlpha = p.life; ctx.fillStyle = '#888'; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill(); }); ctx.globalAlpha = 1; }
+
+// Floating text
+let floats = [];
+function spawnFloat(x, y, text) { floats.push({ x, y, text, life: 1, vy: -2 }); }
+function updateFloats() { floats.forEach(f => { f.y += f.vy; f.life -= 0.025; }); floats = floats.filter(f => f.life > 0); }
+function drawFloats() { floats.forEach(f => { ctx.globalAlpha = f.life; ctx.fillStyle = '#fff'; ctx.font = 'bold 28px system-ui'; ctx.textAlign = 'center'; ctx.fillText(f.text, f.x, f.y); }); ctx.globalAlpha = 1; }
+
+// Main loop
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05); lastTime = time;
+  ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+  if (gameState === STATE.PLAYING) {
+    elapsed += dt; updateGame(dt); updateParticles(); updateFloats(); updateHUD();
+  }
+  drawGame(); drawParticles(); drawFloats();
+  input.tapped = false;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// =====================================================================
+// MATCH MECHANIC — CONFIGURATION
+// =====================================================================
+
+const MATCH_CONFIG = {
+  cols: 6,
+  rows: 6,
+  types: 4,
+  cellPadding: 4,
+  matchMin: 3,
+  targetScore: 50,
+  pointsPerPiece: 1,
+  comboMultiplier: 2,
+  swipeThreshold: 20,
+  fallSpeed: 0.15,
+  moves: 20,
+};
+
+// =====================================================================
+// MATCH STATE
+// =====================================================================
+let grid = [];
+let cellSize = 0;
+let gridOffsetX = 0;
+let gridOffsetY = 0;
+let selected = null;
+let combo = 0;
+let movesLeft = 0;
+let processing = false;
+
+// =====================================================================
+// RESKIN FUNCTIONS — CHANGE VISUALS HERE
+// =====================================================================
+
+const PIECE_SHADES = ['#ddd', '#aaa', '#888', '#fff', '#bbb', '#ccc'];
+
+/* RESKIN: Change piece shapes per type */
+function drawPiece(x, y, size, type, alpha) {
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  const shade = PIECE_SHADES[type % PIECE_SHADES.length];
+  const r = size * 0.4;
+  ctx.fillStyle = shade;
+  switch (type) {
+    case 0:
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); break;
+    case 1:
+      ctx.fillRect(x - r, y - r, r * 2, r * 2); break;
+    case 2:
+      ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); ctx.fill(); break;
+    case 3:
+      ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * 0.7); ctx.lineTo(x - r, y + r * 0.7); ctx.closePath(); ctx.fill(); break;
+    default:
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i - Math.PI / 6; const px = x + r * Math.cos(a); const py = y + r * Math.sin(a); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); }
+      ctx.closePath(); ctx.fill(); break;
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* RESKIN: Grid background */
+function drawGridBg() {
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  const p = 6;
+  ctx.fillRect(gridOffsetX - p, gridOffsetY - p, MATCH_CONFIG.cols * cellSize + p * 2, MATCH_CONFIG.rows * cellSize + p * 2);
+}
+
+/* RESKIN: Cell background */
+function drawCellBg(x, y, size) {
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  const p = MATCH_CONFIG.cellPadding;
+  ctx.fillRect(x - size / 2 + p, y - size / 2 + p, size - p * 2, size - p * 2);
+}
+
+/* RESKIN: Selection highlight */
+function drawSelection(x, y, size) {
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  const p = MATCH_CONFIG.cellPadding;
+  ctx.strokeRect(x - size / 2 + p, y - size / 2 + p, size - p * 2, size - p * 2);
+}
+
+// =====================================================================
+// CORE LOGIC
+// =====================================================================
+
+function cellToScreen(col, row) {
+  return { x: gridOffsetX + col * cellSize + cellSize / 2, y: gridOffsetY + row * cellSize + cellSize / 2 };
+}
+
+function screenToCell(sx, sy) {
+  const col = Math.floor((sx - gridOffsetX) / cellSize);
+  const row = Math.floor((sy - gridOffsetY) / cellSize);
+  if (col < 0 || col >= MATCH_CONFIG.cols || row < 0 || row >= MATCH_CONFIG.rows) return null;
+  return { col, row };
+}
+
+function createGrid() {
+  const cfg = MATCH_CONFIG;
+  grid = [];
+  for (let r = 0; r < cfg.rows; r++) {
+    grid[r] = [];
+    for (let c = 0; c < cfg.cols; c++) {
+      grid[r][c] = { type: Math.floor(Math.random() * cfg.types), currentY: r, targetY: r, alpha: 1 };
+    }
+  }
+  while (findMatches().length > 0) {
+    for (let r = 0; r < cfg.rows; r++)
+      for (let c = 0; c < cfg.cols; c++)
+        grid[r][c].type = Math.floor(Math.random() * cfg.types);
+  }
+}
+
+function findMatches() {
+  const cfg = MATCH_CONFIG;
+  const matched = new Set();
+  for (let r = 0; r < cfg.rows; r++) {
+    for (let c = 0; c <= cfg.cols - cfg.matchMin; c++) {
+      const t = grid[r][c].type; if (t < 0) continue;
+      let n = 1; while (c + n < cfg.cols && grid[r][c + n].type === t) n++;
+      if (n >= cfg.matchMin) for (let k = 0; k < n; k++) matched.add(r + ',' + (c + k));
+    }
+  }
+  for (let c = 0; c < cfg.cols; c++) {
+    for (let r = 0; r <= cfg.rows - cfg.matchMin; r++) {
+      const t = grid[r][c].type; if (t < 0) continue;
+      let n = 1; while (r + n < cfg.rows && grid[r + n][c].type === t) n++;
+      if (n >= cfg.matchMin) for (let k = 0; k < n; k++) matched.add((r + k) + ',' + c);
+    }
+  }
+  return Array.from(matched).map(s => { const [r, c] = s.split(',').map(Number); return { row: r, col: c }; });
+}
+
+function removeMatches(matches) {
+  const pts = matches.length * MATCH_CONFIG.pointsPerPiece * (combo > 0 ? MATCH_CONFIG.comboMultiplier : 1);
+  score += pts;
+  matches.forEach(m => { const p = cellToScreen(m.col, m.row); spawnParticles(p.x, p.y, 4); grid[m.row][m.col].type = -1; });
+  if (matches.length > 0) { const c = cellToScreen(matches[0].col, matches[0].row); spawnFloat(c.x, c.y - 20, '+' + pts); }
+}
+
+function dropPieces() {
+  const cfg = MATCH_CONFIG;
+  for (let c = 0; c < cfg.cols; c++) {
+    let wr = cfg.rows - 1;
+    for (let r = cfg.rows - 1; r >= 0; r--) {
+      if (grid[r][c].type >= 0) {
+        if (wr !== r) { grid[wr][c].type = grid[r][c].type; grid[wr][c].currentY = r; grid[wr][c].targetY = wr; grid[r][c].type = -1; }
+        wr--;
+      }
+    }
+    for (let r = wr; r >= 0; r--) {
+      grid[r][c].type = Math.floor(Math.random() * cfg.types);
+      grid[r][c].currentY = r - (wr - r) - 2;
+      grid[r][c].targetY = r;
+    }
+  }
+}
+
+function swapPieces(r1, c1, r2, c2) {
+  const t = grid[r1][c1].type; grid[r1][c1].type = grid[r2][c2].type; grid[r2][c2].type = t;
+}
+
+function handleSwipe() {
+  if (gameState !== STATE.PLAYING || processing) return;
+  if (input.startX === null || input.startY === null) return;
+  const dx = input.x - input.startX;
+  const dy = input.y - input.startY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const startCell = screenToCell(input.startX, input.startY);
+  if (!startCell) return;
+  if (dist < MATCH_CONFIG.swipeThreshold) { selected = startCell; return; }
+  let dr = 0, dc = 0;
+  if (Math.abs(dx) > Math.abs(dy)) dc = dx > 0 ? 1 : -1; else dr = dy > 0 ? 1 : -1;
+  const tr = startCell.row + dr; const tc = startCell.col + dc;
+  if (tr < 0 || tr >= MATCH_CONFIG.rows || tc < 0 || tc >= MATCH_CONFIG.cols) return;
+  swapPieces(startCell.row, startCell.col, tr, tc);
+  if (findMatches().length === 0) { swapPieces(startCell.row, startCell.col, tr, tc); return; }
+  movesLeft--; combo = 0; processing = true; processMatches();
+}
+
+function processMatches() {
+  const matches = findMatches();
+  if (matches.length > 0) {
+    removeMatches(matches); combo++;
+    setTimeout(() => { dropPieces(); setTimeout(() => processMatches(), 200); }, 150);
+  } else {
+    processing = false; combo = 0;
+    if (movesLeft <= 0 || score >= MATCH_CONFIG.targetScore) endGame();
+  }
+}
+
+// =====================================================================
+// TEMPLATE FUNCTIONS — FILLED FOR MATCH
+// =====================================================================
+
+function initGame() {
+  particles = []; floats = [];
+  selected = null; combo = 0; processing = false;
+  movesLeft = MATCH_CONFIG.moves;
+  const maxW = W * 0.9; const maxH = H * 0.55;
+  cellSize = Math.floor(Math.min(maxW / MATCH_CONFIG.cols, maxH / MATCH_CONFIG.rows));
+  gridOffsetX = (W - MATCH_CONFIG.cols * cellSize) / 2;
+  gridOffsetY = (H - MATCH_CONFIG.rows * cellSize) / 2 + 20;
+  createGrid();
+}
+
+function updateGame(dt) {
+  const cfg = MATCH_CONFIG;
+  for (let r = 0; r < cfg.rows; r++) {
+    for (let c = 0; c < cfg.cols; c++) {
+      const cell = grid[r][c];
+      if (cell.currentY !== cell.targetY) {
+        cell.currentY += (cell.targetY - cell.currentY) * cfg.fallSpeed;
+        if (Math.abs(cell.currentY - cell.targetY) < 0.05) cell.currentY = cell.targetY;
+      }
+    }
+  }
+}
+
+function drawGame() {
+  const cfg = MATCH_CONFIG;
+  drawGridBg();
+
+  // Moves left
+  ctx.fillStyle = '#555'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText(movesLeft + ' moves', W - 16, gridOffsetY - 12);
+
+  for (let r = 0; r < cfg.rows; r++) {
+    for (let c = 0; c < cfg.cols; c++) {
+      const pos = cellToScreen(c, r);
+      drawCellBg(pos.x, pos.y, cellSize);
+      const cell = grid[r][c];
+      if (cell.type >= 0) {
+        const drawY = gridOffsetY + cell.currentY * cellSize + cellSize / 2;
+        drawPiece(pos.x, drawY, cellSize, cell.type, cell.alpha);
+      }
+      if (selected && selected.row === r && selected.col === c) drawSelection(pos.x, pos.y, cellSize);
+    }
+  }
+
+  if (combo > 1 && processing) {
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('COMBO x' + combo, W / 2, gridOffsetY - 30);
+  }
+}
+</script>
+</body>
+</html>
